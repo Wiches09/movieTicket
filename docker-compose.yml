@@ -1,0 +1,19 @@
+services:
+  database:
+    image: mongo:latest
+    container_name: booking_mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  # redis
+  cache_queue:
+    image: redis:alpine
+    container_name: booking_redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+
+volumes:
+  mongo_data:
