@@ -29,6 +29,7 @@ func main() {
 
 	// 1. Initialize MongoDB Client Pool Connection
 	mongoClient := database.ConnectDB()
+	redisClient := database.ConnectRedis()
 
 	// 2. Initialize User Layer Domain Dependencies
 	userRepo := user.NewUserRepository(mongoClient)
@@ -39,8 +40,10 @@ func main() {
 	movieHandler := movie.NewMovieHandler(movieRepo)
 
 	// 4. Initialize Booking Layer Domain Dependencies
-	bookingRepo := booking.NewBookingRepository(mongoClient)
-	bookingHandler := booking.NewBookingHandler(bookingRepo)
+	bookingHub := booking.NewHub()
+	go bookingHub.Run()
+	bookingRepo := booking.NewBookingRepository(mongoClient, redisClient)
+	bookingHandler := booking.NewBookingHandler(bookingRepo, bookingHub)
 
 	// 5. Initialize Firebase Auth Middleware Guard Engine
 	authGuard, err := auth.NewAuthMiddleware()
@@ -59,7 +62,10 @@ func main() {
 		// Booking Routes (Protected)
 		api.POST("/bookings", bookingHandler.CreateBooking, authGuard.RestrictedHandler)
 		api.GET("/bookings/my", bookingHandler.GetUserBookings, authGuard.RestrictedHandler)
-		api.GET("/bookings/occupied", bookingHandler.GetOccupiedSeats)                         // Public or restricted depending on preference
+		api.GET("/bookings/occupied", bookingHandler.GetOccupiedSeats) // Public or restricted depending on preference
+		api.POST("/bookings/lock", bookingHandler.LockSeat, authGuard.RestrictedHandler)
+		api.POST("/bookings/unlock", bookingHandler.UnlockSeat, authGuard.RestrictedHandler)
+		api.GET("/ws/bookings", bookingHandler.HandleWebSocket)                                // Real-time seat updates
 		api.GET("/admin/bookings", bookingHandler.GetAllBookings, authGuard.RestrictedHandler) // Admin view
 
 		// Test Route: Standard protected verification placeholder

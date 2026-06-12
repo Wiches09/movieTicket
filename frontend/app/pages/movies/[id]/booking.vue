@@ -1,55 +1,142 @@
 <script setup>
+import { onAuthStateChanged } from "firebase/auth";
 const route = useRoute();
 const router = useRouter();
 const movieId = route.params.id;
 const { $firebaseAuth } = useNuxtApp();
 
+const user = ref(null);
 const showtime = ref("19:00");
+const seats = ["A1", "A2", "A3", "B1", "B2", "B3", "C1", "C2", "C3"];
+
+// Timers for each seat locked by the current user
+const seatTimers = ref({});
+
+onMounted(() => {
+  onAuthStateChanged($firebaseAuth, (currentUser) => {
+    user.value = currentUser;
+  });
+  connectWebSocket();
+});
 
 // Fetch movie details
 const { data: movie } = await useFetch(
   `http://127.0.0.1:8080/api/movies/${movieId}`,
 );
 
-// Fetch occupied seats
-const { data: occupiedSeats, refresh: refreshOccupied } = await useFetch(
+// Fetch occupancy
+const { data: occupancy, refresh: refreshOccupancy } = await useFetch(
   `http://127.0.0.1:8080/api/bookings/occupied`,
   {
     params: {
       movie_id: movieId,
       showtime: showtime.value,
     },
+    key: `occupancy-${movieId}-${showtime.value}-${Date.now()}`, // Force unique key
   },
 );
 
-const selectedSeats = ref([]);
-const seats = ["A1", "A2", "A3", "B1", "B2", "B3", "C1", "C2", "C3"];
+let ws;
+function connectWebSocket() {
+  ws = new WebSocket("ws://127.0.0.1:8080/api/ws/bookings");
+  ws.onmessage = (event) => {
+    console.log("WebSocket message received:", event.data);
+    const data = JSON.parse(event.data);
 
-function toggleSeat(seat) {
-  if (occupiedSeats.value?.includes(seat)) return;
+    // SAFETY FALLBACK: Always trigger a full refresh from the API
+    // whenever ANY booking-related message is received.
+    refreshOccupancy();
 
-  if (selectedSeats.value.includes(seat)) {
-    selectedSeats.value = selectedSeats.value.filter((s) => s !== seat);
-  } else {
-    selectedSeats.value.push(seat);
+    if (data.type === "SEAT_UPDATE") {
+      console.log(
+        `Checking match: data.movie_id(${data.movie_id}) == movieId(${movieId}) && data.showtime(${data.showtime}) == showtime.value(${showtime.value})`,
+      );
+      // Only update if it's for the current movie and showtime
+      if (data.movie_id == movieId && data.showtime == showtime.value) {
+        console.log("Applying seat update to occupancy state");
+        occupancy.value = {
+          booked: data.booked,
+          locked: data.locked,
+        };
+      }
+    } else if (data.type === "RELOAD_SEATS") {
+      console.log(
+        "Received RELOAD_SEATS, refreshing occupancy already handled by fallback",
+      );
+    }
+  };
+  ws.onclose = () => {
+    console.log("WebSocket closed, reconnecting...");
+    setTimeout(connectWebSocket, 3000);
+  };
+}
+
+onUnmounted(() => {
+  if (ws) ws.close();
+  // Clear all intervals
+  Object.values(seatTimers.value).forEach((t) => clearInterval(t.interval));
+});
+
+function getSeatStatus(seat) {
+  if (occupancy.value?.booked?.includes(seat)) return "booked";
+  const lockerUid = occupancy.value?.locked?.[seat];
+  if (lockerUid) {
+    if (lockerUid === user.value?.uid) return "selected";
+    return "locked";
+  }
+  return "available";
+}
+
+function getSeatClass(seat) {
+  const status = getSeatStatus(seat);
+  const base =
+    "h-16 w-full rounded-md font-bold transition-all flex flex-col items-center justify-center text-sm relative ";
+
+  switch (status) {
+    case "booked":
+      return base + "bg-red-600 text-white cursor-not-allowed";
+    case "locked":
+      return base + "bg-amber-500 text-white cursor-not-allowed";
+    case "selected":
+      return (
+        base +
+        "bg-emerald-600 text-white cursor-pointer ring-4 ring-emerald-300 ring-inset"
+      );
+    default:
+      return (
+        base +
+        "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-700 hover:bg-gray-200 cursor-pointer"
+      );
   }
 }
 
-async function confirmBooking() {
-  const user = $firebaseAuth.currentUser;
-  if (!user) {
-    alert("Please sign in to book tickets.");
-    return;
+function startTimer(seat) {
+  if (seatTimers.value[seat]) {
+    clearInterval(seatTimers.value[seat].interval);
   }
 
-  if (selectedSeats.value.length === 0) {
-    alert("Please select at least one seat.");
-    return;
-  }
+  seatTimers.value[seat] = {
+    timeLeft: 300, // 5 minutes
+    interval: setInterval(() => {
+      if (seatTimers.value[seat].timeLeft > 0) {
+        seatTimers.value[seat].timeLeft--;
+      } else {
+        clearInterval(seatTimers.value[seat].interval);
+        delete seatTimers.value[seat];
+        refreshOccupancy();
+      }
+    }, 1000),
+  };
+}
 
-  try {
-    const token = await user.getIdToken();
-    const response = await fetch("http://127.0.0.1:8080/api/bookings", {
+async function toggleSeat(seat) {
+  const status = getSeatStatus(seat);
+  if (!user.value) return alert("Please sign in first.");
+
+  const token = await user.value.getIdToken();
+
+  if (status === "selected") {
+    const res = await fetch("http://127.0.0.1:8080/api/bookings/unlock", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -57,23 +144,60 @@ async function confirmBooking() {
       },
       body: JSON.stringify({
         movie_id: parseInt(movieId),
-        seats: selectedSeats.value,
         showtime: showtime.value,
+        seat,
+      }),
+    });
+    if (res.ok) {
+      if (seatTimers.value[seat]) {
+        clearInterval(seatTimers.value[seat].interval);
+        delete seatTimers.value[seat];
+      }
+      refreshOccupancy();
+    }
+  } else if (status === "available") {
+    const res = await fetch("http://127.0.0.1:8080/api/bookings/lock", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        movie_id: parseInt(movieId),
+        showtime: showtime.value,
+        seat,
       }),
     });
 
-    if (response.ok) {
-      alert("Booking confirmed! Enjoy your movie.");
-      router.push("/");
+    if (res.ok) {
+      startTimer(seat);
+      refreshOccupancy();
     } else {
-      const errorData = await response.json();
-      alert(`Booking failed: ${errorData.error || "Unknown error"}`);
-      refreshOccupied(); // Refresh seats if there was a conflict
+      const err = await res.json();
+      alert(err.error || "Failed to lock seat");
+      refreshOccupancy();
     }
-  } catch (error) {
-    console.error("Booking error:", error);
-    alert("An error occurred while processing your booking.");
   }
+}
+
+async function confirmBooking() {
+  if (!user.value) return;
+  const selectedSeats = Object.keys(occupancy.value?.locked || {}).filter(
+    (seat) => occupancy.value.locked[seat] === user.value.uid,
+  );
+
+  if (selectedSeats.length === 0)
+    return alert("Please select at least one seat.");
+
+  router.push({
+    path: "/payment",
+    query: {
+      movieId: movieId,
+      movie: movie.value?.title,
+      seats: selectedSeats.join(","),
+      showtime: showtime.value,
+    },
+  });
 }
 </script>
 
@@ -84,60 +208,63 @@ async function confirmBooking() {
       icon="i-heroicons-arrow-left"
       variant="ghost"
       class="mb-6"
+      >Back</UButton
     >
-      Back to Details
-    </UButton>
 
     <UCard>
       <template #header>
         <h2 v-if="movie" class="text-2xl font-bold text-emerald-600">
-          Booking for Movie: {{ movie.title }}
+          Booking: {{ movie.title }}
         </h2>
-        <h2 v-else class="text-2xl font-bold">Loading Booking...</h2>
       </template>
 
       <div class="p-4">
-        <p class="mb-4 font-medium">Select your seats ({{ showtime }}):</p>
-        <div class="grid grid-cols-3 gap-4 max-w-xs mx-auto mb-8">
-          <UButton
-            v-for="seat in seats"
-            :key="seat"
-            :color="
-              occupiedSeats?.includes(seat)
-                ? 'red'
-                : selectedSeats.includes(seat)
-                  ? 'emerald'
-                  : 'gray'
-            "
-            :variant="
-              occupiedSeats?.includes(seat) || selectedSeats.includes(seat)
-                ? 'solid'
-                : 'outline'
-            "
-            :disabled="occupiedSeats?.includes(seat)"
-            @click="toggleSeat(seat)"
-          >
-            {{ seat }}
-          </UButton>
+        <div class="flex flex-wrap gap-4 mb-8 justify-center text-xs">
+          <div class="flex items-center gap-1">
+            <div class="w-4 h-4 bg-gray-100 border rounded"></div>
+            Available
+          </div>
+          <div class="flex items-center gap-1">
+            <div class="w-4 h-4 bg-amber-500 rounded"></div>
+            Locked
+          </div>
+          <div class="flex items-center gap-1">
+            <div class="w-4 h-4 bg-red-600 rounded"></div>
+            Booked
+          </div>
+          <div class="flex items-center gap-1">
+            <div class="w-4 h-4 bg-emerald-600 rounded"></div>
+            Yours
+          </div>
         </div>
 
-        <div
-          v-if="selectedSeats.length > 0"
-          class="text-center text-sm text-gray-500"
-        >
-          Selected: {{ selectedSeats.join(", ") }}
+        <div class="grid grid-cols-3 gap-6 max-w-sm mx-auto mb-10">
+          <button
+            v-for="seat in seats"
+            :key="seat"
+            :class="getSeatClass(seat)"
+            @click="toggleSeat(seat)"
+          >
+            <span>{{ seat }}</span>
+            <span
+              v-if="seatTimers[seat]"
+              class="text-[10px] mt-1 bg-black/20 px-1 rounded"
+            >
+              {{ seatTimers[seat].timeLeft }}s
+            </span>
+          </button>
         </div>
+
+        <p class="text-center text-sm text-gray-500 italic">
+          Tip: Seats auto-unlock after 5 minutes. Complete payment quickly!
+        </p>
       </div>
 
       <template #footer>
         <div class="flex justify-end">
-          <UButton
-            color="primary"
-            :disabled="selectedSeats.length === 0"
-            @click="confirmBooking"
+          <UButton color="primary" @click="confirmBooking"
+            >Confirm Booking</UButton
           >
-            Confirm Booking
-          </UButton>
         </div>
       </template>
     </UCard>

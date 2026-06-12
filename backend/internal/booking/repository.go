@@ -2,8 +2,10 @@ package booking
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -11,12 +13,57 @@ import (
 
 type BookingRepository struct {
 	collection *mongo.Collection
+	redis      *redis.Client
 }
 
-func NewBookingRepository(client *mongo.Client) *BookingRepository {
+func NewBookingRepository(client *mongo.Client, rdb *redis.Client) *BookingRepository {
 	return &BookingRepository{
 		collection: client.Database("booking_db").Collection("bookings"),
+		redis:      rdb,
 	}
+}
+
+func (r *BookingRepository) LockSeat(ctx context.Context, movieID int, showtime, seat, userID string) (bool, error) {
+	key := fmt.Sprintf("lock:%d:%s:%s", movieID, showtime, seat)
+	// NX: Set only if the key does not exist
+	success, err := r.redis.SetNX(ctx, key, userID, 5*time.Minute).Result()
+	return success, err
+}
+
+func (r *BookingRepository) UnlockSeat(ctx context.Context, movieID int, showtime, seat, userID string) error {
+	key := fmt.Sprintf("lock:%d:%s:%s", movieID, showtime, seat)
+
+	// Only unlock if it was locked by the same user
+	val, err := r.redis.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if val == userID {
+		return r.redis.Del(ctx, key).Err()
+	}
+	return nil
+}
+
+func (r *BookingRepository) GetLockedSeats(ctx context.Context, movieID int, showtime string) (map[string]string, error) {
+	pattern := fmt.Sprintf("lock:%d:%s:*", movieID, showtime)
+	keys, err := r.redis.Keys(ctx, pattern).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	locks := make(map[string]string)
+	for _, key := range keys {
+		userID, _ := r.redis.Get(ctx, key).Result()
+		// key format is lock:movieID:showtime:seat
+		parts := fmt.Sprintf("lock:%d:%s:", movieID, showtime)
+		seat := key[len(parts):]
+		locks[seat] = userID
+	}
+	return locks, nil
 }
 
 func (r *BookingRepository) getNextSequence(ctx context.Context, name string) (int, error) {
