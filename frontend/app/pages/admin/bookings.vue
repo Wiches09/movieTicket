@@ -192,8 +192,8 @@ function formatDate(dateString) {
               ? 'i-heroicons-bars-arrow-down'
               : 'i-heroicons-bars-arrow-up'
           "
-          color="gray"
-          variant="solid"
+          color="neutral"
+          variant="outline"
           @click="toggleSort"
         >
           {{ sortOrder === "desc" ? "Newest First" : "Oldest First" }}
