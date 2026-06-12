@@ -9,7 +9,7 @@ const user = ref(null);
 const showtime = ref("19:00");
 const seats = ["A1", "A2", "A3", "B1", "B2", "B3", "C1", "C2", "C3"];
 
-// Timers for each seat locked by the current user
+// Timers for seat locked by current user
 const seatTimers = ref({});
 
 onMounted(() => {

@@ -40,7 +40,7 @@ async function handleSubmit() {
 
     const user = userCredential.user;
 
-    // Sync profile to MongoDB (Handles both new and existing users)
+    // sync firebase profile to MongoDB
     const token = await user.getIdToken();
     await fetch("http://127.0.0.1:8080/api/profile/save", {
       method: "POST",
