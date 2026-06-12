@@ -1,4 +1,8 @@
 <script setup>
+definePageMeta({
+  middleware: ["user"],
+});
+
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -42,7 +46,7 @@ async function handleSubmit() {
 
     // sync firebase profile to MongoDB
     const token = await user.getIdToken();
-    await fetch("http://127.0.0.1:8080/api/profile/save", {
+    const res = await fetch("http://127.0.0.1:8080/api/profile/save", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -53,7 +57,12 @@ async function handleSubmit() {
       }),
     });
 
-    router.push("/");
+    const profile = await res.json();
+    if (profile.role === "admin") {
+      router.push("/admin/bookings");
+    } else {
+      router.push("/");
+    }
   } catch (error) {
     alert(error.message);
   } finally {

@@ -40,7 +40,13 @@ func (h *UserHandler) SaveProfile(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to save profile"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"status": "Profile saved successfully!"})
+	// Fetch the final profile to return to frontend (includes the role)
+	finalProfile, err := h.repo.GetProfileByID(ctx, uid)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve saved profile"})
+	}
+
+	return c.JSON(http.StatusOK, finalProfile)
 }
 
 func (h *UserHandler) GetAllProfiles(c echo.Context) error {

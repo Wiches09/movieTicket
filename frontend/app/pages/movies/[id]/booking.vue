@@ -1,4 +1,8 @@
 <script setup>
+definePageMeta({
+  middleware: ["user"],
+});
+
 import { onAuthStateChanged } from "firebase/auth";
 const route = useRoute();
 const router = useRouter();

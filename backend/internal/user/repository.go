@@ -14,6 +14,7 @@ type UserProfile struct {
 	FirebaseUID string    `bson:"_id" json:"uid"` // Using Firebase UID as the unique document ID
 	DisplayName string    `bson:"display_name" json:"display_name"`
 	Email       string    `bson:"email" json:"email"`
+	Role        string    `bson:"role" json:"role"` // "admin" or "user"
 	CreatedAt   time.Time `bson:"created_at" json:"created_at"`
 	UpdatedAt   time.Time `bson:"updated_at" json:"updated_at"`
 }
@@ -30,11 +31,21 @@ func NewUserRepository(client *mongo.Client) *UserRepository {
 	}
 }
 
+// GetProfileByID retrieves a user profile by their Firebase UID
+func (r *UserRepository) GetProfileByID(ctx context.Context, uid string) (*UserProfile, error) {
+	var profile UserProfile
+	err := r.collection.FindOne(ctx, bson.M{"_id": uid}).Decode(&profile)
+	if err != nil {
+		return nil, err
+	}
+	return &profile, nil
+}
+
 // UpsertProfile inserts a new profile or updates an existing one if the UID matches
 func (r *UserRepository) UpsertProfile(ctx context.Context, profile UserProfile) error {
 	filter := bson.M{"_id": profile.FirebaseUID}
 
-	// If the profile already exists, we overwrite everything except the creation date
+	// If the profile already exists, we overwrite everything except the creation date and role
 	update := bson.M{
 		"$set": bson.M{
 			"display_name": profile.DisplayName,
@@ -42,6 +53,7 @@ func (r *UserRepository) UpsertProfile(ctx context.Context, profile UserProfile)
 			"updated_at":   time.Now(),
 		},
 		"$setOnInsert": bson.M{
+			"role":       "user", // Default role for new signups
 			"created_at": time.Now(),
 		},
 	}

@@ -1,4 +1,8 @@
 <script setup>
+definePageMeta({
+  middleware: ["user"],
+});
+
 const route = useRoute();
 const movieId = route.params.id;
 

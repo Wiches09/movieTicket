@@ -1,8 +1,6 @@
 package main
 
 import (
-	"net/http"
-
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
@@ -48,7 +46,7 @@ func main() {
 	bookingHandler := booking.NewBookingHandler(bookingRepo, bookingHub, kafkaWriter)
 
 	// 5. Initialize Firebase Auth Middleware Guard Engine
-	authGuard, err := auth.NewAuthMiddleware()
+	authGuard, err := auth.NewAuthMiddleware(userRepo)
 	if err != nil {
 		e.Logger.Fatalf("Failed to initialize Firebase Admin: %v", err)
 	}
@@ -59,7 +57,7 @@ func main() {
 		// Movie Routes (Public)
 		api.GET("/movies", movieHandler.GetMovies)
 		api.GET("/movies/:id", movieHandler.GetMovie)
-		api.POST("/movies", movieHandler.CreateMovie) // Add this line
+		api.POST("/movies", movieHandler.CreateMovie, authGuard.RestrictedHandler, authGuard.AdminOnly)
 
 		// Booking Routes (Protected)
 		api.POST("/bookings", bookingHandler.CreateBooking, authGuard.RestrictedHandler)
@@ -67,22 +65,18 @@ func main() {
 		api.GET("/bookings/occupied", bookingHandler.GetOccupiedSeats) // Public or restricted depending on preference
 		api.POST("/bookings/lock", bookingHandler.LockSeat, authGuard.RestrictedHandler)
 		api.POST("/bookings/unlock", bookingHandler.UnlockSeat, authGuard.RestrictedHandler)
-		api.GET("/ws/bookings", bookingHandler.HandleWebSocket)                                // Real-time seat updates
-		api.GET("/admin/bookings", bookingHandler.GetAllBookings, authGuard.RestrictedHandler) // Admin view
-		api.GET("/admin/logs", bookingHandler.GetSystemLogs, authGuard.RestrictedHandler)      // System logs
+		api.GET("/ws/bookings", bookingHandler.HandleWebSocket) // Real-time seat updates
 
-		// Test Route: Standard protected verification placeholder
-		api.GET("/secure-data", func(c echo.Context) error {
-			uid := c.Get("uid").(string)
-			return c.JSON(http.StatusOK, map[string]string{
-				"message": "Access Granted! This data is securely processed via Go Echo.",
-				"uid":     uid,
-			})
-		}, authGuard.RestrictedHandler)
+		// Admin Routes (Strictly Restricted)
+		admin := api.Group("/admin", authGuard.RestrictedHandler, authGuard.AdminOnly)
+		{
+			admin.GET("/bookings", bookingHandler.GetAllBookings)
+			admin.GET("/logs", bookingHandler.GetSystemLogs)
+			admin.GET("/users", userHandler.GetAllProfiles)
+		}
 
 		// MongoDB Profile Route: Upserts frontend data straight into MongoDB documents
 		api.POST("/profile/save", userHandler.SaveProfile, authGuard.RestrictedHandler)
-		api.GET("/admin/users", userHandler.GetAllProfiles, authGuard.RestrictedHandler)
 	}
 
 	// Start Server Engine

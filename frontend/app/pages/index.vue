@@ -1,4 +1,8 @@
 <script setup>
+definePageMeta({
+  middleware: ["user"],
+});
+
 const {
   data: movies,
   pending,

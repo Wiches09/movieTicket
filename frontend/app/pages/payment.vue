@@ -1,4 +1,8 @@
 <script setup>
+definePageMeta({
+  middleware: ["user"],
+});
+
 import { onAuthStateChanged } from "firebase/auth";
 const route = useRoute();
 const router = useRouter();
@@ -52,17 +56,21 @@ async function processPayment() {
 }
 
 function cancelPayment() {
-    router.back();
+  router.back();
 }
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center p-4 bg-gray-50 dark:bg-gray-900">
+  <div
+    class="min-h-screen flex items-center justify-center p-4 bg-gray-50 dark:bg-gray-900"
+  >
     <UCard class="w-full max-w-md">
       <template #header>
         <div class="text-center">
           <h1 class="text-2xl font-bold text-emerald-600">Secure Payment</h1>
-          <p class="text-sm text-gray-500">Complete your booking in 5 minutes</p>
+          <p class="text-sm text-gray-500">
+            Complete your booking in 5 minutes
+          </p>
         </div>
       </template>
 
@@ -77,30 +85,41 @@ function cancelPayment() {
             <span>Seats:</span>
             <span class="font-medium">{{ seatList.join(", ") }}</span>
           </div>
-          <div class="border-t border-gray-300 dark:border-gray-700 mt-3 pt-3 flex justify-between font-bold text-lg">
+          <div
+            class="border-t border-gray-300 dark:border-gray-700 mt-3 pt-3 flex justify-between font-bold text-lg"
+          >
             <span>Total:</span>
             <span>${{ seatList.length * 12 }}.00</span>
           </div>
         </div>
 
         <div class="space-y-4">
-            <UFormField label="Card Number">
-                <UInput placeholder="1234 5678 9101 1121" icon="i-heroicons-credit-card" />
+          <UFormField label="Card Number">
+            <UInput
+              placeholder="1234 5678 9101 1121"
+              icon="i-heroicons-credit-card"
+            />
+          </UFormField>
+          <div class="grid grid-cols-2 gap-4">
+            <UFormField label="Expiry">
+              <UInput placeholder="MM/YY" />
             </UFormField>
-            <div class="grid grid-cols-2 gap-4">
-                <UFormField label="Expiry">
-                    <UInput placeholder="MM/YY" />
-                </UFormField>
-                <UFormField label="CVC">
-                    <UInput placeholder="123" />
-                </UFormField>
-            </div>
+            <UFormField label="CVC">
+              <UInput placeholder="123" />
+            </UFormField>
+          </div>
         </div>
       </div>
 
       <template #footer>
         <div class="flex flex-col gap-2">
-          <UButton color="primary" block size="lg" :loading="loading" @click="processPayment">
+          <UButton
+            color="primary"
+            block
+            size="lg"
+            :loading="loading"
+            @click="processPayment"
+          >
             Pay Now
           </UButton>
           <UButton variant="ghost" block @click="cancelPayment">

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"movieTicket/backend/internal/user"
+
 	firebase "firebase.google.com/go/v4"
 	"github.com/labstack/echo/v4"
 	"google.golang.org/api/option"
@@ -13,16 +15,17 @@ import (
 
 type AuthMiddleware struct {
 	FirebaseApp *firebase.App
+	userRepo    *user.UserRepository
 }
 
-func NewAuthMiddleware() (*AuthMiddleware, error) {
+func NewAuthMiddleware(ur *user.UserRepository) (*AuthMiddleware, error) {
 	// Initialize Firebase Admin SDK using your service account/ credentials file
 	opt := option.WithCredentialsFile("serviceAccountKey.json")
 	app, err := firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {
 		return nil, err
 	}
-	return &AuthMiddleware{FirebaseApp: app}, nil
+	return &AuthMiddleware{FirebaseApp: app, userRepo: ur}, nil
 }
 
 // RestrictedHandler intercepts and validates the Firebase JWT Token
@@ -58,6 +61,24 @@ func (m *AuthMiddleware) RestrictedHandler(next echo.HandlerFunc) echo.HandlerFu
 		// Save user details into Echo context so endpoints down the road can use them
 		c.Set("uid", token.UID)
 		c.Set("email", token.Claims["email"])
+
+		return next(c)
+	}
+}
+
+// AdminOnly ensures the user has the "admin" role in MongoDB
+func (m *AuthMiddleware) AdminOnly(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		uid := c.Get("uid").(string)
+
+		profile, err := m.userRepo.GetProfileByID(c.Request().Context(), uid)
+		if err != nil {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "User profile not found"})
+		}
+
+		if profile.Role != "admin" {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "Admin access required"})
+		}
 
 		return next(c)
 	}

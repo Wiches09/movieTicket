@@ -1,4 +1,7 @@
 <script setup>
+definePageMeta({
+  middleware: ["admin"],
+});
 import { onAuthStateChanged } from "firebase/auth";
 const { $firebaseAuth } = useNuxtApp();
 
@@ -180,32 +183,24 @@ function formatDate(dateString) {
 
 <template>
   <div class="p-8">
-    <div class="flex justify-between items-center mb-6">
-      <h1 class="text-3xl font-bold">Booking Management (Admin)</h1>
-      <UButton
-        icon="i-heroicons-arrow-path"
-        :loading="loading"
-        @click="fetchData"
-      >
-        Refresh
-      </UButton>
-    </div>
-
     <div v-if="error" class="mb-4 p-4 bg-red-100 text-red-700 rounded-lg">
       Error: {{ error }}
     </div>
 
-    <div
-      v-if="!user && !loading"
-      class="text-center p-8 border-2 border-dashed rounded-lg"
-    >
-      <p class="text-gray-500">
-        Please login as an administrator to view booking history.
-      </p>
-      <UButton to="/login" class="mt-4">Go to Login</UButton>
-    </div>
+    <UCard>
+      <template #header>
+        <div class="flex justify-between items-center">
+          <h1 class="text-2xl font-bold">Booking Management (Admin)</h1>
+          <UButton
+            icon="i-heroicons-arrow-path"
+            :loading="loading"
+            @click="fetchData"
+          >
+            Refresh
+          </UButton>
+        </div>
+      </template>
 
-    <UCard v-else>
       <div class="flex gap-4 mb-4 items-center flex-wrap">
         <USelect
           v-model="filterType"
