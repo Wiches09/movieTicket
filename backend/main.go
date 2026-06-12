@@ -69,6 +69,7 @@ func main() {
 		api.POST("/bookings/unlock", bookingHandler.UnlockSeat, authGuard.RestrictedHandler)
 		api.GET("/ws/bookings", bookingHandler.HandleWebSocket)                                // Real-time seat updates
 		api.GET("/admin/bookings", bookingHandler.GetAllBookings, authGuard.RestrictedHandler) // Admin view
+		api.GET("/admin/logs", bookingHandler.GetSystemLogs, authGuard.RestrictedHandler)      // System logs
 
 		// Test Route: Standard protected verification placeholder
 		api.GET("/secure-data", func(c echo.Context) error {

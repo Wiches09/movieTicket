@@ -29,18 +29,22 @@ func NewBookingHandler(repo *BookingRepository, hub *Hub, kw *kafka.Writer) *Boo
 	return &BookingHandler{repo: repo, hub: hub, kafkaWriter: kw}
 }
 
-// broadcastUpdate sends the current seat state for a movie/showtime to all clients
+func (h *BookingHandler) logEvent(ctx context.Context, eventType, message string) {
+	fmt.Printf("[%s] %s\n", eventType, message)
+	_ = h.repo.InsertLog(ctx, eventType, message)
+}
+
 func (h *BookingHandler) broadcastUpdate(movieID int, showtime string) {
 	ctx := context.Background()
 	booked, err := h.repo.GetOccupiedSeats(ctx, movieID, showtime)
 	if err != nil {
-		fmt.Printf("[SYSTEM ERROR] Failed to fetch occupied seats for broadcast: %v\n", err)
+		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Failed to fetch occupied seats for broadcast: %v", err))
 		return
 	}
 
 	lockedMap, err := h.repo.GetLockedSeats(ctx, movieID, showtime)
 	if err != nil {
-		fmt.Printf("[SYSTEM ERROR] Failed to fetch locked seats for broadcast: %v\n", err)
+		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Failed to fetch locked seats for broadcast: %v", err))
 		return
 	}
 
@@ -76,16 +80,16 @@ func (h *BookingHandler) sendBookingEvent(ctx context.Context, b Booking) {
 	})
 
 	if err != nil {
-		fmt.Printf("[SYSTEM ERROR] Failed to send Kafka event: %v\n", err)
+		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Failed to send Kafka event: %v", err))
 	} else {
-		fmt.Printf("[KAFKA EVENT] Sent BOOKING_CONFIRMED for booking %d\n", b.ID)
+		h.logEvent(ctx, "KAFKA EVENT", fmt.Sprintf("Sent BOOKING_CONFIRMED for booking %d", b.ID))
 	}
 }
 
 func (h *BookingHandler) HandleWebSocket(c echo.Context) error {
 	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
-		fmt.Printf("[SYSTEM ERROR] WebSocket upgrade failed: %v\n", err)
+		h.logEvent(context.Background(), "SYSTEM ERROR", fmt.Sprintf("WebSocket upgrade failed: %v", err))
 		return err
 	}
 	h.hub.register <- ws
@@ -105,18 +109,19 @@ func (h *BookingHandler) HandleWebSocket(c echo.Context) error {
 
 func (h *BookingHandler) CreateBooking(c echo.Context) error {
 	uid := c.Get("uid").(string)
+	ctx := c.Request().Context()
 
 	var b Booking
 	if err := c.Bind(&b); err != nil {
-		fmt.Printf("[SYSTEM ERROR] Failed to bind booking data: %v\n", err)
+		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Failed to bind booking data: %v", err))
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request payload"})
 	}
 
 	b.UserID = uid
 
-	occupied, err := h.repo.GetOccupiedSeats(c.Request().Context(), b.MovieID, b.Showtime)
+	occupied, err := h.repo.GetOccupiedSeats(ctx, b.MovieID, b.Showtime)
 	if err != nil {
-		fmt.Printf("[SYSTEM ERROR] Failed to validate seats for user %s: %v\n", uid, err)
+		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Failed to validate seats for user %s: %v", uid, err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to validate seats"})
 	}
 
@@ -130,20 +135,20 @@ func (h *BookingHandler) CreateBooking(c echo.Context) error {
 		}
 	}
 
-	if err := h.repo.Create(c.Request().Context(), &b); err != nil {
-		fmt.Printf("[SYSTEM ERROR] Failed to create booking in DB for user %s: %v\n", uid, err)
+	if err := h.repo.Create(ctx, &b); err != nil {
+		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Failed to create booking in DB for user %s: %v", uid, err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create booking"})
 	}
 
 	for _, seat := range b.Seats {
-		_ = h.repo.UnlockSeat(c.Request().Context(), b.MovieID, b.Showtime, seat, uid)
+		_ = h.repo.UnlockSeat(ctx, b.MovieID, b.Showtime, seat, uid)
 	}
 
-	fmt.Printf("[BOOKING SUCCESS] User %s booked seats %v for Movie %d\n", uid, b.Seats, b.MovieID)
+	h.logEvent(ctx, "BOOKING SUCCESS", fmt.Sprintf("User %s booked seats %v for Movie %d", uid, b.Seats, b.MovieID))
 	h.broadcastUpdate(b.MovieID, b.Showtime)
 
 	// Send Kafka Event
-	h.sendBookingEvent(c.Request().Context(), b)
+	h.sendBookingEvent(ctx, b)
 
 	return c.JSON(http.StatusCreated, b)
 }
@@ -152,7 +157,7 @@ func (h *BookingHandler) GetUserBookings(c echo.Context) error {
 	uid := c.Get("uid").(string)
 	bookings, err := h.repo.GetByUserID(c.Request().Context(), uid)
 	if err != nil {
-		fmt.Printf("[SYSTEM ERROR] Failed to fetch bookings for user %s: %v\n", uid, err)
+		h.logEvent(c.Request().Context(), "SYSTEM ERROR", fmt.Sprintf("Failed to fetch bookings for user %s: %v", uid, err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch bookings"})
 	}
 	return c.JSON(http.StatusOK, bookings)
@@ -169,13 +174,13 @@ func (h *BookingHandler) GetOccupiedSeats(c echo.Context) error {
 	ctx := c.Request().Context()
 	booked, err := h.repo.GetOccupiedSeats(ctx, movieID, showtime)
 	if err != nil {
-		fmt.Printf("[SYSTEM ERROR] Failed to fetch booked seats: %v\n", err)
+		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Failed to fetch booked seats: %v", err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch booked seats"})
 	}
 
 	lockedMap, err := h.repo.GetLockedSeats(ctx, movieID, showtime)
 	if err != nil {
-		fmt.Printf("[SYSTEM ERROR] Failed to fetch locked seats: %v\n", err)
+		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Failed to fetch locked seats: %v", err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch locked seats"})
 	}
 
@@ -187,6 +192,8 @@ func (h *BookingHandler) GetOccupiedSeats(c echo.Context) error {
 
 func (h *BookingHandler) LockSeat(c echo.Context) error {
 	uid := c.Get("uid").(string)
+	ctx := c.Request().Context()
+
 	var req struct {
 		MovieID  int    `json:"movie_id"`
 		Showtime string `json:"showtime"`
@@ -196,9 +203,9 @@ func (h *BookingHandler) LockSeat(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid payload"})
 	}
 
-	success, err := h.repo.LockSeat(c.Request().Context(), req.MovieID, req.Showtime, req.Seat, uid)
+	success, err := h.repo.LockSeat(ctx, req.MovieID, req.Showtime, req.Seat, uid)
 	if err != nil {
-		fmt.Printf("[SYSTEM ERROR] Redis lock failure for user %s: %v\n", uid, err)
+		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Redis lock failure for user %s: %v", uid, err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Lock service failure"})
 	}
 
@@ -211,10 +218,10 @@ func (h *BookingHandler) LockSeat(c echo.Context) error {
 	// Set a timer to manually unlock and broadcast after 5 minutes.
 	time.AfterFunc(5*time.Minute, func() {
 		// Check if it's still locked by this user before announcing timeout
-		// (In case they already booked it or manually unlocked it)
-		err := h.repo.UnlockSeat(context.Background(), req.MovieID, req.Showtime, req.Seat, uid)
+		bgCtx := context.Background()
+		err := h.repo.UnlockSeat(bgCtx, req.MovieID, req.Showtime, req.Seat, uid)
 		if err == nil {
-			fmt.Printf("[BOOKING TIMEOUT] Seat %s for Movie %d timed out for user %s\n", req.Seat, req.MovieID, uid)
+			h.logEvent(bgCtx, "BOOKING TIMEOUT", fmt.Sprintf("Seat %s for Movie %d timed out for user %s", req.Seat, req.MovieID, uid))
 			h.broadcastUpdate(req.MovieID, req.Showtime)
 		}
 	})
@@ -224,6 +231,8 @@ func (h *BookingHandler) LockSeat(c echo.Context) error {
 
 func (h *BookingHandler) UnlockSeat(c echo.Context) error {
 	uid := c.Get("uid").(string)
+	ctx := c.Request().Context()
+
 	var req struct {
 		MovieID  int    `json:"movie_id"`
 		Showtime string `json:"showtime"`
@@ -233,22 +242,33 @@ func (h *BookingHandler) UnlockSeat(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid payload"})
 	}
 
-	err := h.repo.UnlockSeat(c.Request().Context(), req.MovieID, req.Showtime, req.Seat, uid)
+	err := h.repo.UnlockSeat(ctx, req.MovieID, req.Showtime, req.Seat, uid)
 	if err != nil {
-		fmt.Printf("[SYSTEM ERROR] Redis unlock failure for user %s: %v\n", uid, err)
+		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Redis unlock failure for user %s: %v", uid, err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Unlock service failure"})
 	}
 
-	fmt.Printf("[SEAT RELEASED] Seat %s for Movie %d manually released/unlocked by user %s\n", req.Seat, req.MovieID, uid)
+	h.logEvent(ctx, "SEAT RELEASED", fmt.Sprintf("Seat %s for Movie %d manually released/unlocked by user %s", req.Seat, req.MovieID, uid))
 	h.broadcastUpdate(req.MovieID, req.Showtime)
 	return c.JSON(http.StatusOK, map[string]string{"status": "Seat unlocked"})
 }
 
 func (h *BookingHandler) GetAllBookings(c echo.Context) error {
-	bookings, err := h.repo.GetAll(c.Request().Context())
+	ctx := c.Request().Context()
+	bookings, err := h.repo.GetAll(ctx)
 	if err != nil {
-		fmt.Printf("[SYSTEM ERROR] Failed to fetch all bookings: %v\n", err)
+		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Failed to fetch all bookings: %v", err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch history"})
 	}
 	return c.JSON(http.StatusOK, bookings)
+}
+
+func (h *BookingHandler) GetSystemLogs(c echo.Context) error {
+	ctx := c.Request().Context()
+	logs, err := h.repo.GetSystemLogs(ctx)
+	if err != nil {
+		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Failed to fetch system logs: %v", err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch system logs"})
+	}
+	return c.JSON(http.StatusOK, logs)
 }
