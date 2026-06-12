@@ -86,23 +86,23 @@ async function handleLogout() {
       </div>
 
       <form v-else @submit.prevent="handleSubmit" class="space-y-4">
-        <UFormGroup label="Email">
+        <UFormField label="Email">
           <UInput
             v-model="email"
             type="email"
             placeholder="email@example.com"
             required
           />
-        </UFormGroup>
+        </UFormField>
 
-        <UFormGroup label="Password">
+        <UFormField label="Password">
           <UInput
             v-model="password"
             type="password"
             placeholder="••••••••"
             required
           />
-        </UFormGroup>
+        </UFormField>
 
         <UButton type="submit" color="primary" block :loading="loading">
           {{ isLogin ? "Sign In" : "Create Account" }}
