@@ -13,14 +13,40 @@ import (
 
 type BookingRepository struct {
 	collection *mongo.Collection
+	logsColl   *mongo.Collection
 	redis      *redis.Client
 }
 
 func NewBookingRepository(client *mongo.Client, rdb *redis.Client) *BookingRepository {
+	db := client.Database("booking_db")
 	return &BookingRepository{
-		collection: client.Database("booking_db").Collection("bookings"),
+		collection: db.Collection("bookings"),
+		logsColl:   db.Collection("system_logs"),
 		redis:      rdb,
 	}
+}
+
+func (r *BookingRepository) InsertLog(ctx context.Context, eventType, message string) error {
+	logEntry := SystemLog{
+		EventType: eventType,
+		Message:   message,
+		CreatedAt: time.Now(),
+	}
+	_, err := r.logsColl.InsertOne(ctx, logEntry)
+	return err
+}
+
+func (r *BookingRepository) GetSystemLogs(ctx context.Context) ([]SystemLog, error) {
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(100)
+	cursor, err := r.logsColl.Find(ctx, bson.M{}, opts)
+	if err != nil {
+		return nil, err
+	}
+	var logs []SystemLog
+	if err = cursor.All(ctx, &logs); err != nil {
+		return nil, err
+	}
+	return logs, nil
 }
 
 func (r *BookingRepository) LockSeat(ctx context.Context, movieID int, showtime, seat, userID string) (bool, error) {

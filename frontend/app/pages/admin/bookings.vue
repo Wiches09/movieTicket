@@ -3,7 +3,7 @@ import { onAuthStateChanged } from "firebase/auth";
 const { $firebaseAuth } = useNuxtApp();
 
 const user = ref(null);
-const bookings = ref([]);
+const timeline = ref([]);
 const usersMap = ref({});
 const moviesMap = ref({});
 const loading = ref(true);
@@ -22,25 +22,31 @@ function toggleSort() {
   sortOrder.value = sortOrder.value === "desc" ? "asc" : "desc";
 }
 
-const filteredBookings = computed(() => {
-  let result = bookings.value;
+const filteredTimeline = computed(() => {
+  let result = timeline.value;
 
   // 1. Filter
   if (searchQuery.value.trim() !== "") {
-    result = result.filter((b) => {
+    result = result.filter((item) => {
       const q = searchQuery.value.toLowerCase();
       if (filterType.value === "user") {
         const userName = (
-          usersMap.value[b.user_id] ||
-          b.user_id ||
+          usersMap.value[item.user_id] ||
+          item.user_id ||
           ""
         ).toLowerCase();
-        return userName.includes(q);
+        return (
+          userName.includes(q) ||
+          (item.message && item.message.toLowerCase().includes(q))
+        );
       } else if (filterType.value === "movie") {
         const movieName = (
-          moviesMap.value[b.movie_id] || String(b.movie_id)
+          moviesMap.value[item.movie_id] || String(item.movie_id)
         ).toLowerCase();
-        return movieName.includes(q);
+        return (
+          movieName.includes(q) ||
+          (item.message && item.message.toLowerCase().includes(q))
+        );
       }
       return true;
     });
@@ -70,23 +76,22 @@ async function fetchData() {
     const token = await user.value.getIdToken();
     const headers = { Authorization: `Bearer ${token}` };
 
-    // Fetch Bookings, Users, and Movies in parallel
-    const [bookingsRes, usersRes, moviesRes] = await Promise.all([
+    // Fetch Bookings, Users, Movies, and Logs in parallel
+    const [bookingsRes, usersRes, moviesRes, logsRes] = await Promise.all([
       fetch("http://127.0.0.1:8080/api/admin/bookings", { headers }),
       fetch("http://127.0.0.1:8080/api/admin/users", { headers }),
       fetch("http://127.0.0.1:8080/api/movies"), // Movies are public
+      fetch("http://127.0.0.1:8080/api/admin/logs", { headers }),
     ]);
 
-    if (!bookingsRes.ok || !usersRes.ok || !moviesRes.ok) {
-      const errorData = await (
-        bookingsRes.ok ? (usersRes.ok ? moviesRes : usersRes) : bookingsRes
-      ).json();
-      throw new Error(errorData.error || "Failed to fetch data");
+    if (!bookingsRes.ok || !usersRes.ok || !moviesRes.ok || !logsRes.ok) {
+      throw new Error("Failed to fetch dashboard data");
     }
 
     const bookingsData = await bookingsRes.json();
     const usersData = await usersRes.json();
     const moviesData = await moviesRes.json();
+    const logsData = await logsRes.json();
 
     // Map User UID to Display Name
     const uMap = {};
@@ -100,9 +105,46 @@ async function fetchData() {
       mMap[m.id] = m.title || `Movie #${m.id}`;
     });
 
-    bookings.value = bookingsData;
     usersMap.value = uMap;
     moviesMap.value = mMap;
+
+    // Merge Bookings and Logs into a single Timeline array
+    const merged = [];
+
+    if (Array.isArray(bookingsData)) {
+      bookingsData.forEach((b) => {
+        merged.push({
+          id: b.id,
+          user_id: b.user_id,
+          movie_id: b.movie_id,
+          seats: b.seats,
+          showtime: b.showtime,
+          status: b.status,
+          message: `Booked seats ${b.seats.join(", ")}`,
+          created_at: b.created_at,
+        });
+      });
+    }
+
+    if (Array.isArray(logsData)) {
+      logsData.forEach((l) => {
+        // Skip successful booking logs to avoid duplication with actual bookings
+        if (l.event_type !== "BOOKING SUCCESS") {
+          merged.push({
+            id: l.id,
+            user_id: null,
+            movie_id: null,
+            seats: [],
+            showtime: "-",
+            status: l.event_type,
+            message: l.message,
+            created_at: l.created_at,
+          });
+        }
+      });
+    }
+
+    timeline.value = merged;
   } catch (err) {
     error.value = err.message;
     console.error(err);
@@ -123,13 +165,11 @@ onMounted(() => {
 });
 
 const columns = [
-  { id: "id", accessorKey: "id", header: "ID" },
-  { id: "user", accessorKey: "user_id", header: "Customer" },
+  { id: "customer", accessorKey: "user_id", header: "Customer / Context" },
   { id: "movie", accessorKey: "movie_id", header: "Movie" },
-  { id: "seats", accessorKey: "seats", header: "Seats" },
-  { id: "showtime", accessorKey: "showtime", header: "Time" },
+  { id: "activity", accessorKey: "message", header: "Activity" },
   { id: "status", accessorKey: "status", header: "Status" },
-  { id: "created_at", accessorKey: "created_at", header: "Created At" },
+  { id: "created_at", accessorKey: "created_at", header: "Time" },
 ];
 
 function formatDate(dateString) {
@@ -173,7 +213,6 @@ function formatDate(dateString) {
           option-attribute="label"
           value-attribute="value"
           class="w-48"
-          :z-index="1000"
         />
         <UInput
           v-model="searchQuery"
@@ -200,36 +239,43 @@ function formatDate(dateString) {
         </UButton>
       </div>
 
-      <UTable :data="filteredBookings" :columns="columns" :loading="loading">
-        <template #user-cell="{ row }">
+      <UTable :data="filteredTimeline" :columns="columns" :loading="loading">
+        <template #customer-cell="{ row }">
           <div class="font-medium text-gray-900 dark:text-white">
-            {{ usersMap[row.original.user_id] || row.original.user_id }}
+            <span v-if="row.original.user_id">
+              {{ usersMap[row.original.user_id] || row.original.user_id }}
+            </span>
+            <span v-else class="text-gray-500 italic">System Event</span>
           </div>
         </template>
         <template #movie-cell="{ row }">
           <div class="font-medium">
-            {{
-              moviesMap[row.original.movie_id] || `ID: ${row.original.movie_id}`
-            }}
+            <span v-if="row.original.movie_id">
+              {{
+                moviesMap[row.original.movie_id] ||
+                `ID: ${row.original.movie_id}`
+              }}
+            </span>
+            <span v-else>-</span>
           </div>
         </template>
-        <template #seats-cell="{ row }">
-          <UBadge
-            color="gray"
-            variant="soft"
-            class="mr-1"
-            v-for="seat in row.original.seats"
-            :key="seat"
-          >
-            {{ seat }}
-          </UBadge>
+        <template #activity-cell="{ row }">
+          {{ row.original.message }}
         </template>
         <template #created_at-cell="{ row }">
           {{ formatDate(row.original.created_at) }}
         </template>
         <template #status-cell="{ row }">
           <UBadge
-            :color="row.original.status === 'confirmed' ? 'green' : 'red'"
+            :color="
+              row.original.status === 'confirmed'
+                ? 'green'
+                : row.original.status.includes('TIMEOUT')
+                  ? 'amber'
+                  : row.original.status.includes('ERROR')
+                    ? 'red'
+                    : 'gray'
+            "
           >
             {{ row.original.status }}
           </UBadge>
