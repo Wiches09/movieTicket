@@ -12,15 +12,13 @@ export default defineNuxtPlugin(() => {
     appId: "1:1023879298187:web:92dd45bad1c9626f8e688e",
   };
 
-  // 🧠 FIX: Prevent duplicate initialization instances during hot-reloads
+  // Prevent duplicate initialization instances during hot-reloads
   const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-  // 🧠 FIX: Bind the auth instance explicitly to this specific initialized app
+  // Bind auth
   const auth = getAuth(app);
 
-  console.log(
-    "🔥 Firebase Auth Engine successfully initialized inside client plugin context!",
-  );
+  console.log("Firebase Auth online");
 
   return {
     provide: {
