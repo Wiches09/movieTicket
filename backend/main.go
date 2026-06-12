@@ -30,6 +30,8 @@ func main() {
 	// 1. Initialize MongoDB Client Pool Connection
 	mongoClient := database.ConnectDB()
 	redisClient := database.ConnectRedis()
+	kafkaWriter := database.NewKafkaWriter("localhost:9092", "booking-events")
+	defer kafkaWriter.Close()
 
 	// 2. Initialize User Layer Domain Dependencies
 	userRepo := user.NewUserRepository(mongoClient)
@@ -43,7 +45,7 @@ func main() {
 	bookingHub := booking.NewHub()
 	go bookingHub.Run()
 	bookingRepo := booking.NewBookingRepository(mongoClient, redisClient)
-	bookingHandler := booking.NewBookingHandler(bookingRepo, bookingHub)
+	bookingHandler := booking.NewBookingHandler(bookingRepo, bookingHub, kafkaWriter)
 
 	// 5. Initialize Firebase Auth Middleware Guard Engine
 	authGuard, err := auth.NewAuthMiddleware()

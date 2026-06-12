@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
+	"github.com/segmentio/kafka-go"
 )
 
 var upgrader = websocket.Upgrader{
@@ -19,12 +20,13 @@ var upgrader = websocket.Upgrader{
 }
 
 type BookingHandler struct {
-	repo *BookingRepository
-	hub  *Hub
+	repo        *BookingRepository
+	hub         *Hub
+	kafkaWriter *kafka.Writer
 }
 
-func NewBookingHandler(repo *BookingRepository, hub *Hub) *BookingHandler {
-	return &BookingHandler{repo: repo, hub: hub}
+func NewBookingHandler(repo *BookingRepository, hub *Hub, kw *kafka.Writer) *BookingHandler {
+	return &BookingHandler{repo: repo, hub: hub, kafkaWriter: kw}
 }
 
 // broadcastUpdate sends the current seat state for a movie/showtime to all clients
@@ -50,6 +52,34 @@ func (h *BookingHandler) broadcastUpdate(movieID int, showtime string) {
 		"locked":   lockedMap,
 	})
 	h.hub.broadcast <- msg
+}
+
+func (h *BookingHandler) sendBookingEvent(ctx context.Context, b Booking) {
+	if h.kafkaWriter == nil {
+		return
+	}
+
+	event := map[string]interface{}{
+		"event_type": "BOOKING_CONFIRMED",
+		"booking_id": b.ID,
+		"user_id":    b.UserID,
+		"movie_id":   b.MovieID,
+		"seats":      b.Seats,
+		"showtime":   b.Showtime,
+		"timestamp":  time.Now().Unix(),
+	}
+
+	payload, _ := json.Marshal(event)
+	err := h.kafkaWriter.WriteMessages(ctx, kafka.Message{
+		Key:   []byte(strconv.Itoa(b.ID)),
+		Value: payload,
+	})
+
+	if err != nil {
+		fmt.Printf("[SYSTEM ERROR] Failed to send Kafka event: %v\n", err)
+	} else {
+		fmt.Printf("[KAFKA EVENT] Sent BOOKING_CONFIRMED for booking %d\n", b.ID)
+	}
 }
 
 func (h *BookingHandler) HandleWebSocket(c echo.Context) error {
@@ -111,6 +141,10 @@ func (h *BookingHandler) CreateBooking(c echo.Context) error {
 
 	fmt.Printf("[BOOKING SUCCESS] User %s booked seats %v for Movie %d\n", uid, b.Seats, b.MovieID)
 	h.broadcastUpdate(b.MovieID, b.Showtime)
+
+	// Send Kafka Event
+	h.sendBookingEvent(c.Request().Context(), b)
+
 	return c.JSON(http.StatusCreated, b)
 }
 
