@@ -1,7 +1,6 @@
 package booking
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -30,23 +29,19 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true
-			fmt.Printf("Client registered. Total clients: %d\n", len(h.clients))
 			h.mu.Unlock()
 		case client := <-h.unregister:
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				client.Close()
-				fmt.Printf("Client unregistered. Total clients: %d\n", len(h.clients))
 			}
 			h.mu.Unlock()
 		case message := <-h.broadcast:
 			h.mu.Lock()
-			fmt.Printf("Broadcasting message to %d clients\n", len(h.clients))
 			for client := range h.clients {
 				err := client.WriteMessage(websocket.TextMessage, message)
 				if err != nil {
-					fmt.Printf("Error writing to client: %v\n", err)
 					client.Close()
 					delete(h.clients, client)
 				}

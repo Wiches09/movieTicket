@@ -52,7 +52,7 @@ func (m *AuthMiddleware) RestrictedHandler(next echo.HandlerFunc) echo.HandlerFu
 		// Verify the token validity
 		token, err := client.VerifyIDToken(ctx, idToken)
 		if err != nil {
-			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid or expired token " + err.Error()})
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid or expired token"})
 		}
 
 		// Save user details into Echo context so endpoints down the road can use them

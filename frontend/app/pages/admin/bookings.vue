@@ -23,8 +23,10 @@ async function fetchData() {
       fetch("http://127.0.0.1:8080/api/admin/users", { headers }),
     ]);
 
-    if (!bookingsRes.ok || !usersRes.ok)
-      throw new Error("Failed to fetch data");
+    if (!bookingsRes.ok || !usersRes.ok) {
+      const errorData = await (bookingsRes.ok ? usersRes : bookingsRes).json();
+      throw new Error(errorData.error || "Failed to fetch data");
+    }
 
     const bookingsData = await bookingsRes.json();
     const usersData = await usersRes.json();

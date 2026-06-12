@@ -40,7 +40,6 @@ let ws;
 function connectWebSocket() {
   ws = new WebSocket("ws://127.0.0.1:8080/api/ws/bookings");
   ws.onmessage = (event) => {
-    console.log("WebSocket message received:", event.data);
     const data = JSON.parse(event.data);
 
     // SAFETY FALLBACK: Always trigger a full refresh from the API
@@ -48,25 +47,18 @@ function connectWebSocket() {
     refreshOccupancy();
 
     if (data.type === "SEAT_UPDATE") {
-      console.log(
-        `Checking match: data.movie_id(${data.movie_id}) == movieId(${movieId}) && data.showtime(${data.showtime}) == showtime.value(${showtime.value})`,
-      );
       // Only update if it's for the current movie and showtime
       if (data.movie_id == movieId && data.showtime == showtime.value) {
-        console.log("Applying seat update to occupancy state");
         occupancy.value = {
           booked: data.booked,
           locked: data.locked,
         };
       }
     } else if (data.type === "RELOAD_SEATS") {
-      console.log(
-        "Received RELOAD_SEATS, refreshing occupancy already handled by fallback",
-      );
+      // Refresh occupancy already handled by fallback
     }
   };
   ws.onclose = () => {
-    console.log("WebSocket closed, reconnecting...");
     setTimeout(connectWebSocket, 3000);
   };
 }
