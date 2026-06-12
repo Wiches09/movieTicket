@@ -99,7 +99,7 @@ async function handleLogout() {
           <UInput
             v-model="password"
             type="password"
-            placeholder="••••••••"
+            placeholder="********"
             required
           />
         </UFormField>

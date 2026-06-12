@@ -22,7 +22,7 @@ async function logout() {
       class="p-4 border-b bg-white dark:bg-gray-800 flex justify-between items-center"
     >
       <NuxtLink to="/" class="text-xl font-bold text-primary"
-        >🎬 MovieTicket</NuxtLink
+        >MovieTicket</NuxtLink
       >
       <div class="flex gap-4 items-center">
         <template v-if="user">
