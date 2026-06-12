@@ -25,3 +25,6 @@ logs
 
 # Firebase Service Account
 serviceAccountKey.json
+*google*.json
+*api_key*
+*apikey*

@@ -26,10 +26,14 @@ go.work.sum
 
 # env file
 .env
+.env.*
 
 # Editor/IDE
 # .idea/
 # .vscode/
 
-# Firebase Service Account
+# Sensitive Credentials & API Keys
 serviceAccountKey.json
+*google*.json
+*api_key*
+*apikey*
