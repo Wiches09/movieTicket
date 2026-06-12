@@ -7,6 +7,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 
 	"movieTicket/backend/internal/auth"
+	"movieTicket/backend/internal/booking"
 	"movieTicket/backend/internal/database"
 	"movieTicket/backend/internal/movie"
 	"movieTicket/backend/internal/user"
@@ -37,19 +38,29 @@ func main() {
 	movieRepo := movie.NewMovieRepository(mongoClient)
 	movieHandler := movie.NewMovieHandler(movieRepo)
 
-	// 4. Initialize Firebase Auth Middleware Guard Engine
+	// 4. Initialize Booking Layer Domain Dependencies
+	bookingRepo := booking.NewBookingRepository(mongoClient)
+	bookingHandler := booking.NewBookingHandler(bookingRepo)
+
+	// 5. Initialize Firebase Auth Middleware Guard Engine
 	authGuard, err := auth.NewAuthMiddleware()
 	if err != nil {
 		e.Logger.Fatalf("Failed to initialize Firebase Admin: %v", err)
 	}
 
-	// 5. Global Routing Groups
+	// 6. Global Routing Groups
 	api := e.Group("/api")
 	{
 		// Movie Routes (Public)
 		api.GET("/movies", movieHandler.GetMovies)
 		api.GET("/movies/:id", movieHandler.GetMovie)
 		api.POST("/movies", movieHandler.CreateMovie) // Add this line
+
+		// Booking Routes (Protected)
+		api.POST("/bookings", bookingHandler.CreateBooking, authGuard.RestrictedHandler)
+		api.GET("/bookings/my", bookingHandler.GetUserBookings, authGuard.RestrictedHandler)
+		api.GET("/bookings/occupied", bookingHandler.GetOccupiedSeats)                         // Public or restricted depending on preference
+		api.GET("/admin/bookings", bookingHandler.GetAllBookings, authGuard.RestrictedHandler) // Admin view
 
 		// Test Route: Standard protected verification placeholder
 		api.GET("/secure-data", func(c echo.Context) error {
@@ -62,6 +73,7 @@ func main() {
 
 		// MongoDB Profile Route: Upserts frontend data straight into MongoDB documents
 		api.POST("/profile/save", userHandler.SaveProfile, authGuard.RestrictedHandler)
+		api.GET("/admin/users", userHandler.GetAllProfiles, authGuard.RestrictedHandler)
 	}
 
 	// Start Server Engine

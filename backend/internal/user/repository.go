@@ -53,15 +53,16 @@ func (r *UserRepository) UpsertProfile(ctx context.Context, profile UserProfile)
 	return err
 }
 
-// GetProfileByID searches MongoDB for a profile by its Firebase UID string
-func (r *UserRepository) GetProfileByID(ctx context.Context, uid string) (*UserProfile, error) {
-	var profile UserProfile
-	filter := bson.M{"_id": uid}
-
-	err := r.collection.FindOne(ctx, filter).Decode(&profile)
+func (r *UserRepository) GetAllProfiles(ctx context.Context) ([]UserProfile, error) {
+	var profiles []UserProfile
+	cursor, err := r.collection.Find(ctx, bson.M{})
 	if err != nil {
 		return nil, err
 	}
+	defer cursor.Close(ctx)
 
-	return &profile, nil
+	if err = cursor.All(ctx, &profiles); err != nil {
+		return nil, err
+	}
+	return profiles, nil
 }
