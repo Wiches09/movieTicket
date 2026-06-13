@@ -2,6 +2,7 @@
 definePageMeta({
   middleware: ["admin"],
 });
+const userRole = useState("userRole");
 import { onAuthStateChanged } from "firebase/auth";
 const { $firebaseAuth } = useNuxtApp();
 
@@ -182,100 +183,105 @@ function formatDate(dateString) {
 </script>
 
 <template>
-  <div class="p-8">
-    <div v-if="error" class="mb-4 p-4 bg-red-100 text-red-700 rounded-lg">
-      Error: {{ error }}
-    </div>
-
-    <UCard>
-      <template #header>
-        <div class="flex justify-between items-center">
-          <h1 class="text-2xl font-bold">Booking Management (Admin)</h1>
-          <UButton
-            icon="i-heroicons-arrow-path"
-            :loading="loading"
-            @click="fetchData"
-          >
-            Refresh
-          </UButton>
-        </div>
-      </template>
-
-      <div class="flex gap-4 mb-4 items-center flex-wrap">
-        <USelect
-          v-model="filterType"
-          :items="filterOptions"
-          option-attribute="label"
-          value-attribute="value"
-          class="w-48"
-        />
-        <UInput
-          v-model="searchQuery"
-          icon="i-heroicons-magnifying-glass"
-          :placeholder="
-            filterType === 'user'
-              ? 'Search by customer name...'
-              : 'Search by movie title...'
-          "
-          class="w-64"
-        />
-        <div class="flex-grow"></div>
-        <UButton
-          :icon="
-            sortOrder === 'desc'
-              ? 'i-heroicons-bars-arrow-down'
-              : 'i-heroicons-bars-arrow-up'
-          "
-          color="neutral"
-          variant="outline"
-          @click="toggleSort"
-        >
-          {{ sortOrder === "desc" ? "Newest First" : "Oldest First" }}
-        </UButton>
+  <ClientOnly>
+    <div v-if="userRole === 'admin'" class="p-8">
+      <div v-if="error" class="mb-4 p-4 bg-red-100 text-red-700 rounded-lg">
+        Error: {{ error }}
       </div>
 
-      <UTable :data="filteredTimeline" :columns="columns" :loading="loading">
-        <template #customer-cell="{ row }">
-          <div class="font-medium text-gray-900 dark:text-white">
-            <span v-if="row.original.user_id">
-              {{ usersMap[row.original.user_id] || row.original.user_id }}
-            </span>
-            <span v-else class="text-gray-500 italic">System Event</span>
+      <UCard>
+        <template #header>
+          <div class="flex justify-between items-center">
+            <h1 class="text-2xl font-bold">Booking Management (Admin)</h1>
+            <UButton
+              icon="i-heroicons-arrow-path"
+              :loading="loading"
+              @click="fetchData"
+            >
+              Refresh
+            </UButton>
           </div>
         </template>
-        <template #movie-cell="{ row }">
-          <div class="font-medium">
-            <span v-if="row.original.movie_id">
-              {{
-                moviesMap[row.original.movie_id] ||
-                `ID: ${row.original.movie_id}`
-              }}
-            </span>
-            <span v-else>-</span>
-          </div>
-        </template>
-        <template #activity-cell="{ row }">
-          {{ row.original.message }}
-        </template>
-        <template #created_at-cell="{ row }">
-          {{ formatDate(row.original.created_at) }}
-        </template>
-        <template #status-cell="{ row }">
-          <UBadge
-            :color="
-              row.original.status === 'confirmed'
-                ? 'green'
-                : row.original.status.includes('TIMEOUT')
-                  ? 'amber'
-                  : row.original.status.includes('ERROR')
-                    ? 'red'
-                    : 'gray'
+
+        <div class="flex gap-4 mb-4 items-center flex-wrap">
+          <USelect
+            v-model="filterType"
+            :items="filterOptions"
+            option-attribute="label"
+            value-attribute="value"
+            class="w-48"
+          />
+          <UInput
+            v-model="searchQuery"
+            icon="i-heroicons-magnifying-glass"
+            :placeholder="
+              filterType === 'user'
+                ? 'Search by customer name...'
+                : 'Search by movie title...'
             "
+            class="w-64"
+          />
+          <div class="flex-grow"></div>
+          <UButton
+            :icon="
+              sortOrder === 'desc'
+                ? 'i-heroicons-bars-arrow-down'
+                : 'i-heroicons-bars-arrow-up'
+            "
+            color="neutral"
+            variant="outline"
+            @click="toggleSort"
           >
-            {{ row.original.status }}
-          </UBadge>
-        </template>
-      </UTable>
-    </UCard>
-  </div>
+            {{ sortOrder === "desc" ? "Newest First" : "Oldest First" }}
+          </UButton>
+        </div>
+
+        <UTable :data="filteredTimeline" :columns="columns" :loading="loading">
+          <template #customer-cell="{ row }">
+            <div class="font-medium text-gray-900 dark:text-white">
+              <span v-if="row.original.user_id">
+                {{ usersMap[row.original.user_id] || row.original.user_id }}
+              </span>
+              <span v-else class="text-gray-500 italic">System Event</span>
+            </div>
+          </template>
+          <template #movie-cell="{ row }">
+            <div class="font-medium">
+              <span v-if="row.original.movie_id">
+                {{
+                  moviesMap[row.original.movie_id] ||
+                  `ID: ${row.original.movie_id}`
+                }}
+              </span>
+              <span v-else>-</span>
+            </div>
+          </template>
+          <template #activity-cell="{ row }">
+            {{ row.original.message }}
+          </template>
+          <template #created_at-cell="{ row }">
+            {{ formatDate(row.original.created_at) }}
+          </template>
+          <template #status-cell="{ row }">
+            <UBadge
+              :color="
+                row.original.status === 'confirmed'
+                  ? 'green'
+                  : row.original.status.includes('TIMEOUT')
+                    ? 'amber'
+                    : row.original.status.includes('ERROR')
+                      ? 'red'
+                      : 'gray'
+              "
+            >
+              {{ row.original.status }}
+            </UBadge>
+          </template>
+        </UTable>
+      </UCard>
+    </div>
+    <div v-else class="flex items-center justify-center min-h-[60vh]">
+      <UProgress />
+    </div>
+  </ClientOnly>
 </template>

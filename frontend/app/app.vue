@@ -2,8 +2,8 @@
 import { onAuthStateChanged, signOut } from "firebase/auth";
 const { $firebaseAuth } = useNuxtApp();
 const user = ref(null);
-const userRole = useState("userRole", () => null);
 const roleCookie = useCookie("userRole", { maxAge: 60 * 60 * 24 * 7 }); // 1 week
+const userRole = useState("userRole", () => roleCookie.value);
 
 onMounted(() => {
   onAuthStateChanged($firebaseAuth, async (currentUser) => {
@@ -45,16 +45,23 @@ async function logout() {
 
 <template>
   <div
-    class="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-50"
+    class="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-50"
   >
     <header
-      class="p-4 border-b bg-white dark:bg-gray-800 flex justify-between items-center"
+      class="p-4 border-b bg-white dark:bg-gray-800 flex justify-between items-center shrink-0"
     >
-      <NuxtLink
-        :to="userRole === 'admin' ? '/admin/bookings' : '/'"
-        class="text-xl font-bold text-primary"
-        >MovieTicket</NuxtLink
-      >
+      <ClientOnly>
+        <NuxtLink
+          :to="userRole === 'admin' ? '/admin/bookings' : '/'"
+          class="text-xl font-bold text-primary"
+          >MovieTicket</NuxtLink
+        >
+        <template #fallback>
+          <NuxtLink to="/" class="text-xl font-bold text-primary"
+            >MovieTicket</NuxtLink
+          >
+        </template>
+      </ClientOnly>
       <div class="flex gap-4 items-center">
         <template v-if="user">
           <span class="text-sm text-gray-500">{{ user.email }}</span>
@@ -74,7 +81,7 @@ async function logout() {
         </template>
       </div>
     </header>
-    <main>
+    <main class="flex-grow flex flex-col">
       <NuxtPage />
     </main>
   </div>

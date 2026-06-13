@@ -141,7 +141,7 @@ func (h *BookingHandler) CreateBooking(c echo.Context) error {
 	}
 
 	for _, seat := range b.Seats {
-		_ = h.repo.UnlockSeat(ctx, b.MovieID, b.Showtime, seat, uid)
+		_, _ = h.repo.UnlockSeat(ctx, b.MovieID, b.Showtime, seat, uid)
 	}
 
 	h.logEvent(ctx, "BOOKING SUCCESS", fmt.Sprintf("User %s booked seats %v for Movie %d", uid, b.Seats, b.MovieID))
@@ -215,14 +215,22 @@ func (h *BookingHandler) LockSeat(c echo.Context) error {
 
 	h.broadcastUpdate(req.MovieID, req.Showtime)
 
-	// Set a timer to manually unlock and broadcast after 5 minutes.
+	lockUID := uid
+	lockReq := req
+	fmt.Printf("\n[TIMER] Started 5m lock for Seat %s (User: %s)\n", lockReq.Seat, lockUID)
+
 	time.AfterFunc(5*time.Minute, func() {
-		// Check if it's still locked by this user before announcing timeout
-		bgCtx := context.Background()
-		err := h.repo.UnlockSeat(bgCtx, req.MovieID, req.Showtime, req.Seat, uid)
-		if err == nil {
-			h.logEvent(bgCtx, "BOOKING TIMEOUT", fmt.Sprintf("Seat %s for Movie %d timed out for user %s", req.Seat, req.MovieID, uid))
-			h.broadcastUpdate(req.MovieID, req.Showtime)
+		fmt.Printf("\n[TIMER] Fired for Seat %s\n", lockReq.Seat)
+		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		unlocked, err := h.repo.UnlockSeat(bgCtx, lockReq.MovieID, lockReq.Showtime, lockReq.Seat, lockUID)
+		if err == nil && unlocked {
+			fmt.Printf(">>> [TIMEOUT SUCCESS] Seat %s is now Available <<<\n", lockReq.Seat)
+			h.logEvent(bgCtx, "BOOKING TIMEOUT", fmt.Sprintf("Seat %s for Movie %d timed out for user %s", lockReq.Seat, lockReq.MovieID, lockUID))
+			h.broadcastUpdate(lockReq.MovieID, lockReq.Showtime)
+		} else {
+			fmt.Printf(">>> [TIMEOUT SKIP] Seat %s already released (unlocked=%v, err=%v) <<<\n", lockReq.Seat, unlocked, err)
 		}
 	})
 
@@ -242,7 +250,7 @@ func (h *BookingHandler) UnlockSeat(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid payload"})
 	}
 
-	err := h.repo.UnlockSeat(ctx, req.MovieID, req.Showtime, req.Seat, uid)
+	_, err := h.repo.UnlockSeat(ctx, req.MovieID, req.Showtime, req.Seat, uid)
 	if err != nil {
 		h.logEvent(ctx, "SYSTEM ERROR", fmt.Sprintf("Redis unlock failure for user %s: %v", uid, err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Unlock service failure"})

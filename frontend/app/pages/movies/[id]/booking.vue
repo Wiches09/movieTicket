@@ -30,14 +30,8 @@ const { data: movie } = await useFetch(
 
 // Fetch occupancy
 const { data: occupancy, refresh: refreshOccupancy } = await useFetch(
-  `http://127.0.0.1:8080/api/bookings/occupied`,
-  {
-    params: {
-      movie_id: movieId,
-      showtime: showtime.value,
-    },
-    key: `occupancy-${movieId}-${showtime.value}-${Date.now()}`, // Force unique key
-  },
+  () =>
+    `http://127.0.0.1:8080/api/bookings/occupied?movie_id=${movieId}&showtime=${showtime.value}&t=${Date.now()}`,
 );
 
 let ws;
@@ -46,11 +40,9 @@ function connectWebSocket() {
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
 
-    // SAFETY FALLBACK: Always trigger a full refresh from the API
-    // whenever ANY booking-related message is received.
-    refreshOccupancy();
-
+    // REMOVED: refreshOccupancy() fallback. Trust the data in the message.
     if (data.type === "SEAT_UPDATE") {
+      console.log("[WS] Received SEAT_UPDATE:", data);
       // Only update if it's for the current movie and showtime
       if (data.movie_id == movieId && data.showtime == showtime.value) {
         occupancy.value = {
@@ -59,7 +51,7 @@ function connectWebSocket() {
         };
       }
     } else if (data.type === "RELOAD_SEATS") {
-      // Refresh occupancy already handled by fallback
+      refreshOccupancy();
     }
   };
   ws.onclose = () => {
@@ -70,7 +62,10 @@ function connectWebSocket() {
 onUnmounted(() => {
   if (ws) ws.close();
   // Clear all intervals
-  Object.values(seatTimers.value).forEach((t) => clearInterval(t.interval));
+  Object.keys(seatTimers.value).forEach((seat) => {
+    clearInterval(seatTimers.value[seat].interval);
+  });
+  seatTimers.value = {};
 });
 
 function getSeatStatus(seat) {
@@ -112,14 +107,24 @@ function startTimer(seat) {
   }
 
   seatTimers.value[seat] = {
-    timeLeft: 300, // 5 minutes
+    timeLeft: 300, // 300 seconds = 5 minutes
     interval: setInterval(() => {
-      if (seatTimers.value[seat].timeLeft > 0) {
+      if (seatTimers.value[seat].timeLeft > 1) {
         seatTimers.value[seat].timeLeft--;
       } else {
         clearInterval(seatTimers.value[seat].interval);
         delete seatTimers.value[seat];
-        refreshOccupancy();
+
+        // Immediately update local UI for responsiveness
+        if (occupancy.value?.locked) {
+          if (occupancy.value.locked[seat] === user.value?.uid) {
+            // Trigger reactivity by creating a new object
+            const newLocked = { ...occupancy.value.locked };
+            delete newLocked[seat];
+            occupancy.value.locked = newLocked;
+          }
+        }
+        // No manual refresh here - trust the WebSocket broadcast from backend
       }
     }, 1000),
   };
@@ -234,22 +239,34 @@ async function confirmBooking() {
           </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-6 max-w-sm mx-auto mb-10">
-          <button
-            v-for="seat in seats"
-            :key="seat"
-            :class="getSeatClass(seat)"
-            @click="toggleSeat(seat)"
-          >
-            <span>{{ seat }}</span>
-            <span
-              v-if="seatTimers[seat]"
-              class="text-[10px] mt-1 bg-black/20 px-1 rounded"
+        <ClientOnly>
+          <div class="grid grid-cols-3 gap-6 max-w-sm mx-auto mb-10">
+            <button
+              v-for="seat in seats"
+              :key="seat"
+              :class="getSeatClass(seat)"
+              @click="toggleSeat(seat)"
             >
-              {{ seatTimers[seat].timeLeft }}s
-            </span>
-          </button>
-        </div>
+              <span>{{ seat }}</span>
+              <span
+                v-if="seatTimers[seat]"
+                class="text-[10px] mt-1 bg-black/20 px-1 rounded"
+              >
+                {{ Math.floor(seatTimers[seat].timeLeft / 60) }}:{{
+                  String(seatTimers[seat].timeLeft % 60).padStart(2, "0")
+                }}
+              </span>
+            </button>
+          </div>
+          <template #fallback>
+            <div class="flex justify-center p-12">
+              <UIcon
+                name="i-heroicons-arrow-path"
+                class="animate-spin h-8 w-8 text-gray-400"
+              />
+            </div>
+          </template>
+        </ClientOnly>
 
         <p class="text-center text-sm text-gray-500 italic">
           Tip: Seats auto-unlock after 5 minutes. Complete payment quickly!

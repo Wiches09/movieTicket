@@ -51,27 +51,35 @@ func (r *BookingRepository) GetSystemLogs(ctx context.Context) ([]SystemLog, err
 
 func (r *BookingRepository) LockSeat(ctx context.Context, movieID int, showtime, seat, userID string) (bool, error) {
 	key := fmt.Sprintf("lock:%d:%s:%s", movieID, showtime, seat)
-	// NX: Set only if the key does not exist
-	success, err := r.redis.SetNX(ctx, key, userID, 5*time.Minute).Result()
+	fmt.Printf("[DEBUG] Locking seat: %s for user: %s (TTL: 10s)\n", key, userID)
+	// NX: Set only if the key does not exist.
+	// Set TTL slightly longer than the application timeout (5m) to allow manual timeout handling.
+	success, err := r.redis.SetNX(ctx, key, userID, 6*time.Minute).Result()
 	return success, err
 }
 
-func (r *BookingRepository) UnlockSeat(ctx context.Context, movieID int, showtime, seat, userID string) error {
+func (r *BookingRepository) UnlockSeat(ctx context.Context, movieID int, showtime, seat, userID string) (bool, error) {
 	key := fmt.Sprintf("lock:%d:%s:%s", movieID, showtime, seat)
+	fmt.Printf("[DEBUG] Attempting to unlock seat: %s for user: %s\n", key, userID)
 
 	// Only unlock if it was locked by the same user
 	val, err := r.redis.Get(ctx, key).Result()
 	if err == redis.Nil {
-		return nil
+		fmt.Printf("[DEBUG] Unlock failed: Key %s not found in Redis\n", key)
+		return false, nil
 	}
 	if err != nil {
-		return err
+		fmt.Printf("[DEBUG] Unlock error: %v\n", err)
+		return false, err
 	}
 
 	if val == userID {
-		return r.redis.Del(ctx, key).Err()
+		deleted, err := r.redis.Del(ctx, key).Result()
+		fmt.Printf("[DEBUG] Unlock result for %s: %v (deleted: %d)\n", key, deleted > 0, deleted)
+		return deleted > 0, err
 	}
-	return nil
+	fmt.Printf("[DEBUG] Unlock failed: User mismatch. Expected %s, found %s\n", userID, val)
+	return false, nil
 }
 
 func (r *BookingRepository) GetLockedSeats(ctx context.Context, movieID int, showtime string) (map[string]string, error) {

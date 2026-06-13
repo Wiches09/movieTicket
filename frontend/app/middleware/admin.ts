@@ -4,31 +4,33 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   // 1. Server-side or immediate client-side check using Cookie
   const currentRole = userRole.value || roleCookie.value;
-  if (currentRole && currentRole !== "admin") {
-    return navigateTo("/");
+
+  if (!process.client) {
+    if (currentRole === "admin") return;
+    return navigateTo(currentRole ? "/" : "/login");
   }
 
-  // 2. Browser-only check for deeper verification
   if (process.client) {
     const { $firebaseAuth } = useNuxtApp();
 
     if ($firebaseAuth) {
-      // Wait for Firebase to initialize
-      await new Promise((resolve) => {
-        const unsubscribe = $firebaseAuth.onAuthStateChanged((user) => {
-          unsubscribe();
-          resolve(user);
+      if (!userRole.value) {
+        await new Promise((resolve) => {
+          const unsubscribe = $firebaseAuth.onAuthStateChanged((user) => {
+            unsubscribe();
+            resolve(user);
+          });
         });
-      });
+      }
 
       const user = $firebaseAuth.currentUser;
 
-      // If not logged in, go to login
       if (!user) {
+        userRole.value = null;
+        roleCookie.value = null;
         return navigateTo("/login");
       }
 
-      // Final Role sync
       if (!userRole.value) {
         try {
           const token = await user.getIdToken();
@@ -44,6 +46,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
           });
           const profile = await res.json();
           userRole.value = profile.role || "user";
+          roleCookie.value = userRole.value;
         } catch (e) {
           return navigateTo("/");
         }
@@ -53,8 +56,5 @@ export default defineNuxtRouteMiddleware(async (to) => {
         return navigateTo("/");
       }
     }
-  } else if (!currentRole) {
-    // On server, if no cookie exists at all, we can't confirm admin,
-    // so we let it pass to the client for Firebase to decide.
   }
 });

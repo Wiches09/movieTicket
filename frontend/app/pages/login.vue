@@ -76,51 +76,88 @@ async function handleLogout() {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center p-4">
-    <UCard class="w-full max-w-md">
+  <div class="flex-grow flex items-center justify-center p-4 bg-slate-950">
+    <UCard
+      class="w-full max-w-md shadow-2xl border-slate-800 bg-slate-900"
+      :ui="{
+        header: { base: 'border-b border-slate-800' },
+        body: { base: 'space-y-6' },
+      }"
+    >
       <template #header>
-        <h1 class="text-2xl font-bold text-center">
+        <h1 class="text-3xl font-bold text-center text-white py-2">
           {{ user ? "Welcome Back!" : isLogin ? "Login" : "Register" }}
         </h1>
       </template>
 
-      <div v-if="user" class="text-center space-y-4">
-        <p>
-          Logged in as: <strong>{{ user.email }}</strong>
+      <div v-if="user" class="text-center space-y-6 py-4">
+        <p class="text-slate-300">
+          Logged in as: <strong class="text-white">{{ user.email }}</strong>
         </p>
-        <div class="flex flex-col gap-2">
-          <UButton to="/" block variant="outline">Go to Movies</UButton>
-          <UButton color="red" block @click="handleLogout">Logout</UButton>
+        <div class="flex flex-col gap-3">
+          <UButton to="/" block variant="outline" color="primary">
+            Go to Movies
+          </UButton>
+          <UButton color="red" block variant="ghost" @click="handleLogout">
+            Logout
+          </UButton>
         </div>
       </div>
 
-      <form v-else @submit.prevent="handleSubmit" class="space-y-4">
-        <UFormField label="Email">
+      <form v-else @submit.prevent="handleSubmit" class="space-y-6 py-2">
+        <UFormField
+          label="Email"
+          :ui="{ label: { base: 'text-slate-200 font-semibold' } }"
+        >
           <UInput
             v-model="email"
             type="email"
             placeholder="email@example.com"
+            size="lg"
+            variant="subtle"
+            class="w-full"
+            :ui="{
+              base: 'bg-slate-800/50 border-slate-700 text-white placeholder-slate-500 focus:ring-primary-500',
+            }"
             required
           />
         </UFormField>
 
-        <UFormField label="Password">
+        <UFormField
+          label="Password"
+          :ui="{ label: { base: 'text-slate-200 font-semibold' } }"
+        >
           <UInput
             v-model="password"
             type="password"
             placeholder="********"
+            size="lg"
+            variant="subtle"
+            class="w-full"
+            :ui="{
+              base: 'bg-slate-800/50 border-slate-700 text-white placeholder-slate-500 focus:ring-primary-500',
+            }"
             required
           />
         </UFormField>
 
-        <UButton type="submit" color="primary" block :loading="loading">
-          {{ isLogin ? "Sign In" : "Create Account" }}
-        </UButton>
+        <div class="pt-2">
+          <UButton
+            type="submit"
+            color="primary"
+            block
+            size="lg"
+            class="font-bold text-lg py-3"
+            :loading="loading"
+          >
+            {{ isLogin ? "Sign In" : "Create Account" }}
+          </UButton>
+        </div>
 
-        <div class="text-center text-sm">
+        <div class="text-center">
           <button
             type="button"
-            class="text-primary hover:underline"
+            class="text-primary-400 hover:text-primary-300 text-sm font-medium transition-colors"
             @click="isLogin = !isLogin"
           >
             {{

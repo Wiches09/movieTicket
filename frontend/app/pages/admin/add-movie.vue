@@ -2,6 +2,7 @@
 definePageMeta({
   middleware: ["admin"],
 });
+const userRole = useState("userRole");
 
 const movie = ref({
   title: "",
@@ -41,45 +42,50 @@ async function addMovie() {
 </script>
 
 <template>
-  <div class="p-8 max-w-md mx-auto">
-    <UCard>
-      <template #header>
-        <h1 class="text-xl font-bold">Add New Movie</h1>
-      </template>
+  <ClientOnly>
+    <div v-if="userRole === 'admin'" class="p-8 max-w-md mx-auto">
+      <UCard>
+        <template #header>
+          <h1 class="text-xl font-bold">Add New Movie</h1>
+        </template>
 
-      <form @submit.prevent="addMovie" class="space-y-4">
-        <UFormField label="Movie Title">
-          <UInput
-            v-model="movie.title"
-            placeholder="e.g. Interstellar"
-            required
-          />
-        </UFormField>
+        <form @submit.prevent="addMovie" class="space-y-4">
+          <UFormField label="Movie Title">
+            <UInput
+              v-model="movie.title"
+              placeholder="e.g. Interstellar"
+              required
+            />
+          </UFormField>
 
-        <UFormField label="Release Year">
-          <UInput v-model="movie.year" type="number" required />
-        </UFormField>
+          <UFormField label="Release Year">
+            <UInput v-model="movie.year" type="number" required />
+          </UFormField>
 
-        <UButton type="submit" block color="primary" :loading="isLoading">
-          Add Movie
-        </UButton>
-      </form>
+          <UButton type="submit" block color="primary" :loading="isLoading">
+            Add Movie
+          </UButton>
+        </form>
 
-      <div
-        v-if="message"
-        :class="[
-          'mt-4 p-3 rounded text-sm text-center',
-          isError ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600',
-        ]"
-      >
-        {{ message }}
-      </div>
+        <div
+          v-if="message"
+          :class="[
+            'mt-4 p-3 rounded text-sm text-center',
+            isError ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600',
+          ]"
+        >
+          {{ message }}
+        </div>
 
-      <template #footer>
-        <UButton to="/" variant="ghost" color="gray" block>
-          Back to Home
-        </UButton>
-      </template>
-    </UCard>
-  </div>
+        <template #footer>
+          <UButton to="/" variant="ghost" color="gray" block>
+            Back to Home
+          </UButton>
+        </template>
+      </UCard>
+    </div>
+    <div v-else class="flex items-center justify-center min-h-[60vh]">
+      <UProgress />
+    </div>
+  </ClientOnly>
 </template>
