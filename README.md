@@ -1,6 +1,6 @@
 # MovieTicket Booking System
 
-ระบบจองตั๋วหนังแบบ Real-time ที่เน้นความถูกต้องของข้อมูล (Data Consistency) และประสบการณ์การใช้งานที่ลื่นไหล (Seamless UX) พัฒนาด้วย Go, Nuxt 4 และระบบ Infrastructure ที่ครบถ้วน
+ระบบจองตั๋วหนังแบบ Real-time พัฒนาด้วย Go, Nuxt 4
 
 ---
 
